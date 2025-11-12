@@ -28,7 +28,7 @@ def append_world():
 with DAG(
     dag_id="s3_hello_world",
     start_date=datetime(2025, 11, 12),
-    schedule_interval=None,
+    schedule=None,
     catchup=False,
     tags=["s3", "example"],
 ) as dag:
