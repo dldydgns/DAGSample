@@ -1,19 +1,46 @@
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.decorators import task
 from datetime import datetime
 import subprocess
 import boto3
 import os
 from kubernetes.client import models as k8s
 
-# S3 버킷 설정
+
+# 기본 설정
 BUCKET_IN = "privideo-original"
 BUCKET_OUT = "privideo-output"
 OUTPUT_DIR = "/tmp"
 RESOLUTIONS = ["360", "540", "720"]
 
+# Kubernetes Pod Override 설정 (ffmpeg 이미지 사용)
+executor_config_transcode = {
+    "pod_override": k8s.V1Pod(
+        spec=k8s.V1PodSpec(
+            containers=[
+                k8s.V1Container(
+                    name="base",
+                    image="jrottenberg/ffmpeg:6.0-ubuntu",
+                    env_from=[
+                        k8s.V1EnvFromSource(
+                            secret_ref=k8s.V1SecretEnvSource(name="airflow-aws")
+                        )
+                    ],
+                    resources=k8s.V1ResourceRequirements(
+                        requests={"cpu": "1000m", "memory": "2Gi"},
+                        limits={"cpu": "2000m", "memory": "4Gi"},
+                    ),
+                )
+            ],
+            restart_policy="Never",
+        )
+    )
+}
+
+
+@task(executor_config=executor_config_transcode)
 def transcode_video(dag_run=None, **_):
-    """video_id를 받아 S3에서 다운로드 후 다중 해상도 트랜스코딩"""
+    """S3에서 동영상을 다운로드 후 해상도별 트랜스코딩"""
     if not dag_run or not dag_run.conf.get("video_id"):
         raise ValueError("❌ video_id parameter is required when triggering the DAG")
 
@@ -49,41 +76,12 @@ def transcode_video(dag_run=None, **_):
     print("🎉 All resolutions transcoded & uploaded successfully")
 
 
-# DAG 정의
 with DAG(
     dag_id="trigger_transcode",
     start_date=datetime(2025, 11, 18),
     schedule=None,
     catchup=False,
-    tags=["ffmpeg", "s3", "k8s", "dynamic"],
+    tags=["ffmpeg", "s3", "k8s", "taskflow"],
 ) as dag:
 
-    # ✅ KubernetesExecutor override 설정 (정식 V1Pod 객체 방식)
-    executor_config = {
-        "pod_override": k8s.V1Pod(
-            spec=k8s.V1PodSpec(
-                containers=[
-                    k8s.V1Container(
-                        name="base",  # 반드시 "base" 이름이어야 함!
-                        image="jrottenberg/ffmpeg:6.0-ubuntu",
-                        env_from=[
-                            k8s.V1EnvFromSource(
-                                secret_ref=k8s.V1SecretEnvSource(name="airflow-aws")
-                            )
-                        ],
-                        resources=k8s.V1ResourceRequirements(
-                            requests={"cpu": "1000m", "memory": "2Gi"},
-                            limits={"cpu": "2000m", "memory": "4Gi"},
-                        ),
-                    )
-                ],
-                restart_policy="Never",
-            )
-        )
-    }
-
-    transcode = PythonOperator(
-        task_id="transcode_with_params",
-        python_callable=transcode_video,
-        executor_config=executor_config,
-    )
+    transcode_video()
