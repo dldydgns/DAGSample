@@ -4,14 +4,13 @@ from datetime import datetime
 import subprocess
 import boto3
 import os
-
+from kubernetes.client import models as k8s
 
 # S3 버킷 설정
 BUCKET_IN = "privideo-original"
 BUCKET_OUT = "privideo-output"
 OUTPUT_DIR = "/tmp"
 RESOLUTIONS = ["360", "540", "720"]
-
 
 def transcode_video(dag_run=None, **_):
     """video_id를 받아 S3에서 다운로드 후 다중 해상도 트랜스코딩"""
@@ -50,6 +49,7 @@ def transcode_video(dag_run=None, **_):
     print("🎉 All resolutions transcoded & uploaded successfully")
 
 
+# DAG 정의
 with DAG(
     dag_id="trigger_transcode",
     start_date=datetime(2025, 11, 18),
@@ -58,22 +58,32 @@ with DAG(
     tags=["ffmpeg", "s3", "k8s", "dynamic"],
 ) as dag:
 
+    # ✅ KubernetesExecutor override 설정 (정식 V1Pod 객체 방식)
+    executor_config = {
+        "pod_override": k8s.V1Pod(
+            spec=k8s.V1PodSpec(
+                containers=[
+                    k8s.V1Container(
+                        name="base",  # 반드시 "base" 이름이어야 함!
+                        image="jrottenberg/ffmpeg:6.0-ubuntu",
+                        env_from=[
+                            k8s.V1EnvFromSource(
+                                secret_ref=k8s.V1SecretEnvSource(name="airflow-aws")
+                            )
+                        ],
+                        resources=k8s.V1ResourceRequirements(
+                            requests={"cpu": "1000m", "memory": "2Gi"},
+                            limits={"cpu": "2000m", "memory": "4Gi"},
+                        ),
+                    )
+                ],
+                restart_policy="Never",
+            )
+        )
+    }
+
     transcode = PythonOperator(
         task_id="transcode_with_params",
         python_callable=transcode_video,
-        executor_config={
-            "pod_override": {
-                "spec": {
-                    "containers": [
-                        {
-                            "image": "jrottenberg/ffmpeg:6.0-ubuntu",
-                            "resources": {
-                                "requests": {"cpu": "1000m", "memory": "2Gi"}
-                            },
-                            "envFrom": [{"secretRef": {"name": "airflow-aws"}}],
-                        }
-                    ]
-                }
-            }
-        },
+        executor_config=executor_config,
     )
