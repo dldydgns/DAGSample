@@ -62,10 +62,18 @@ with DAG(
         task_id="transcode_with_params",
         python_callable=transcode_video,
         executor_config={
-            "KubernetesExecutor": {
-                "image": "jrottenberg/ffmpeg:6.0-ubuntu",
-                "resources": {"request_cpu": "1000m", "request_memory": "2Gi"},
-                "envFrom": [{"secretRef": {"name": "airflow-aws"}}],
+            "pod_override": {
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "jrottenberg/ffmpeg:6.0-ubuntu",
+                            "resources": {
+                                "requests": {"cpu": "1000m", "memory": "2Gi"}
+                            },
+                            "envFrom": [{"secretRef": {"name": "airflow-aws"}}],
+                        }
+                    ]
+                }
             }
         },
     )
