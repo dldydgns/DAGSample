@@ -15,19 +15,13 @@ RESOLUTIONS = ["360", "540", "720"]
 executor_config_transcode = {
     "pod_override": k8s.V1Pod(
         spec=k8s.V1PodSpec(
+            service_account_name="airflow-task",
             containers=[
                 k8s.V1Container(
                     name="base",
                     image="leeyonghun/airflow-ffmpeg:v3",
 
                     env_from=[
-                        k8s.V1EnvFromSource(
-                            secret_ref=k8s.V1SecretEnvSource(
-                                name="airflow-jwt-secret"
-                            )
-                        ),
-
-                        # AWS only (S3)
                         k8s.V1EnvFromSource(
                             secret_ref=k8s.V1SecretEnvSource(
                                 name="airflow-aws"
