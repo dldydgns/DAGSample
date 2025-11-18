@@ -23,7 +23,7 @@ executor_config_transcode = {
                     env_from=[
                         k8s.V1EnvFromSource(
                             secret_ref=k8s.V1SecretEnvSource(
-                                name="airflow-api-signing-key"
+                                name="airflow-jwt-secret"
                             )
                         ),
 
