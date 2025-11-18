@@ -20,31 +20,15 @@ executor_config_transcode = {
                     name="base",
                     image="leeyonghun/airflow-ffmpeg:v3",
 
-                    # 🔥 Airflow 필수 환경변수를 ConfigMap/Secret으로 모두 주입
                     env_from=[
-                        # Airflow 기본 설정(env) 가져오는 ConfigMap
-                        k8s.V1EnvFromSource(
-                            config_map_ref=k8s.V1ConfigMapEnvSource(
-                                name="airflow-airflow-config"
-                            )
-                        ),
-                        # 메타데이터 DB, Fernet key, API token 등을 주는 Secret
+                        # API Auth Token
                         k8s.V1EnvFromSource(
                             secret_ref=k8s.V1SecretEnvSource(
-                                name="airflow-metadata"
+                                name="airflow-api-secret-key"
                             )
                         ),
-                        k8s.V1EnvFromSource(
-                            secret_ref=k8s.V1SecretEnvSource(
-                                name="airflow-fernet-key"
-                            )
-                        ),
-                        k8s.V1EnvFromSource(
-                            secret_ref=k8s.V1SecretEnvSource(
-                                name="airflow-api-token"
-                            )
-                        ),
-                        # AWS secret (너가 만든 S3용 secret)
+
+                        # AWS only (S3)
                         k8s.V1EnvFromSource(
                             secret_ref=k8s.V1SecretEnvSource(
                                 name="airflow-aws"
