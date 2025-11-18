@@ -21,8 +21,6 @@ executor_config_transcode = {
                 k8s.V1Container(
                     name="base",
                     image="jrottenberg/ffmpeg:6.0-ubuntu",
-                    command=["/bin/bash", "-c"],  # 중요! entrypoint override 방지
-                    args=["sleep infinity"],
                     env_from=[
                         k8s.V1EnvFromSource(
                             secret_ref=k8s.V1SecretEnvSource(name="airflow-aws")
@@ -38,7 +36,6 @@ executor_config_transcode = {
         )
     )
 }
-
 
 @task(executor_config=executor_config_transcode)
 def transcode_video(dag_run=None, **_):
