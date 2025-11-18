@@ -20,13 +20,41 @@ executor_config_transcode = {
         spec=k8s.V1PodSpec(
             containers=[
                 k8s.V1Container(
-                    name="base",               # Airflow Worker 컨테이너는 반드시 base
-                    image=WORKER_IMAGE,
+                    name="base",
+                    image="leeyonghun/airflow-ffmpeg:3.0.2-python3.9-slim-v3",
+
+                    # 🔥 Airflow 필수 환경변수를 ConfigMap/Secret으로 모두 주입
                     env_from=[
+                        # Airflow 기본 설정(env) 가져오는 ConfigMap
                         k8s.V1EnvFromSource(
-                            secret_ref=k8s.V1SecretEnvSource(name="airflow-aws")
-                        )
+                            config_map_ref=k8s.V1ConfigMapEnvSource(
+                                name="airflow-airflow-config"
+                            )
+                        ),
+                        # 메타데이터 DB, Fernet key, API token 등을 주는 Secret
+                        k8s.V1EnvFromSource(
+                            secret_ref=k8s.V1SecretEnvSource(
+                                name="airflow-metadata"
+                            )
+                        ),
+                        k8s.V1EnvFromSource(
+                            secret_ref=k8s.V1SecretEnvSource(
+                                name="airflow-fernet-key"
+                            )
+                        ),
+                        k8s.V1EnvFromSource(
+                            secret_ref=k8s.V1SecretEnvSource(
+                                name="airflow-api-token"
+                            )
+                        ),
+                        # AWS secret (너가 만든 S3용 secret)
+                        k8s.V1EnvFromSource(
+                            secret_ref=k8s.V1SecretEnvSource(
+                                name="airflow-aws"
+                            )
+                        ),
                     ],
+
                     resources=k8s.V1ResourceRequirements(
                         requests={"cpu": "1000m", "memory": "2Gi"},
                         limits={"cpu": "2000m", "memory": "4Gi"},
@@ -37,6 +65,7 @@ executor_config_transcode = {
         )
     )
 }
+
 
 @task(executor_config=executor_config_transcode)
 def transcode_video(dag_run=None, **_):
