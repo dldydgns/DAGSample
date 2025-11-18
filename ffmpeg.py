@@ -21,7 +21,7 @@ executor_config_transcode = {
             containers=[
                 k8s.V1Container(
                     name="base",
-                    image="leeyonghun/airflow-ffmpeg:3.0.2-python3.9-slim-v3",
+                    image=WORKER_IMAGE,
 
                     # 🔥 Airflow 필수 환경변수를 ConfigMap/Secret으로 모두 주입
                     env_from=[
