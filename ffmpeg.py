@@ -13,7 +13,7 @@ OUTPUT_DIR = "/tmp"
 RESOLUTIONS = ["360", "540", "720"]
 
 # 🔥 Airflow Worker + ffmpeg 포함된 커스텀 이미지 사용
-WORKER_IMAGE = "leeyonghun/airflow-ffmpeg:v2"
+WORKER_IMAGE = "leeyonghun/airflow-ffmpeg:v3"
 
 executor_config_transcode = {
     "pod_override": k8s.V1Pod(
