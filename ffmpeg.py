@@ -12,16 +12,13 @@ BUCKET_OUT = "privideo-output"
 OUTPUT_DIR = "/tmp"
 RESOLUTIONS = ["360", "540", "720"]
 
-# 🔥 Airflow Worker + ffmpeg 포함된 커스텀 이미지 사용
-WORKER_IMAGE = "leeyonghun/airflow-ffmpeg:v3"
-
 executor_config_transcode = {
     "pod_override": k8s.V1Pod(
         spec=k8s.V1PodSpec(
             containers=[
                 k8s.V1Container(
                     name="base",
-                    image=WORKER_IMAGE,
+                    image="leeyonghun/airflow-ffmpeg:v3",
 
                     # 🔥 Airflow 필수 환경변수를 ConfigMap/Secret으로 모두 주입
                     env_from=[
