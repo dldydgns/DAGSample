@@ -13,7 +13,7 @@ BUCKET_OUT = "privideo-output"
 OUTPUT_DIR = "/tmp"
 RESOLUTIONS = ["360", "540", "720"]
 
-# Kubernetes Pod Override 설정 (ffmpeg 이미지 사용)
+# Kubernetes Pod Override (ffmpeg 전용 Pod)
 executor_config_transcode = {
     "pod_override": k8s.V1Pod(
         spec=k8s.V1PodSpec(
@@ -21,6 +21,8 @@ executor_config_transcode = {
                 k8s.V1Container(
                     name="base",
                     image="jrottenberg/ffmpeg:6.0-ubuntu",
+                    command=["/bin/bash", "-c"],  # 중요! entrypoint override 방지
+                    args=["sleep infinity"],
                     env_from=[
                         k8s.V1EnvFromSource(
                             secret_ref=k8s.V1SecretEnvSource(name="airflow-aws")
@@ -57,16 +59,15 @@ def transcode_video(dag_run=None, **_):
     for res in RESOLUTIONS:
         output_local = f"{OUTPUT_DIR}/video_{video_id}_{res}p.mp4"
         print(f"🎬 Transcoding {res}p → {output_local}")
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", local_input,
-            "-vf", f"scale=-2:{res}",
-            "-c:v", "libx264",
-            "-preset", "medium",
-            "-c:a", "aac",
-            output_local
-        ]
-        subprocess.run(cmd, check=True)
+
+        cmd = (
+            f"ffmpeg -y -i {local_input} "
+            f"-vf scale=-2:{res} "
+            f"-c:v libx264 -preset medium -c:a aac {output_local}"
+        )
+
+        print(f"🔹 Running command: {cmd}")
+        subprocess.run(cmd, shell=True, check=True)
 
         output_key = f"org-1/video_{video_id}_{res}p.mp4"
         print(f"⬆️ Uploading to s3://{BUCKET_OUT}/{output_key}")
