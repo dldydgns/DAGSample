@@ -21,10 +21,9 @@ executor_config_transcode = {
                     image="leeyonghun/airflow-ffmpeg:v3",
 
                     env_from=[
-                        # API Auth Token
                         k8s.V1EnvFromSource(
                             secret_ref=k8s.V1SecretEnvSource(
-                                name="airflow-api-secret-key"
+                                name="airflow-api-signing-key"
                             )
                         ),
 
