@@ -63,7 +63,7 @@ def transcode_video(dag_run=None, **_):
         cmd = (
             f"ffmpeg -y -i {local_input} "
             f"-vf scale=-2:{res} "
-            f"-c:v libx264 -preset medium -c:a aac {output_local}"
+            f"-c:v libx264 -c:a aac {output_local}"
         )
 
         print(f"🔹 Running command: {cmd}")
