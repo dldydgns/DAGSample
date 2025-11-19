@@ -15,7 +15,6 @@ RESOLUTIONS = ["360", "540", "720"]
 executor_config_transcode = {
     "pod_override": k8s.V1Pod(
         spec=k8s.V1PodSpec(
-            service_account_name="airflow-task",
             containers=[
                 k8s.V1Container(
                     name="base",
