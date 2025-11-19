@@ -18,7 +18,7 @@ executor_config_transcode = {
             containers=[
                 k8s.V1Container(
                     name="base",
-                    image="leeyonghun/airflow-ffmpeg:v3",
+                    image="leeyonghun/airflow-ffmpeg:v4",
 
                     env_from=[
                         k8s.V1EnvFromSource(
