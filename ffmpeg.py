@@ -11,40 +11,50 @@ BUCKET_OUTPUT = "privideo-output"
 OUTPUT_DIR = "/tmp"
 RESOLUTIONS = ["360", "540", "720"]
 
-# ---------------------
-# 공통 컨테이너 설정
-# ---------------------
-base_container = k8s.V1Container(
+# ------------------------------------------------
+# 공통 컨테이너 (트랜스코딩 용 - 고사양)
+# ------------------------------------------------
+transcode_container = k8s.V1Container(
     name="base",
     image="leeyonghun/airflow-ffmpeg:v4",
-    env_from=[
-        k8s.V1EnvFromSource(
-            secret_ref=k8s.V1SecretEnvSource(name="airflow-aws")
-        )
-    ],
+    env_from=[k8s.V1EnvFromSource(secret_ref=k8s.V1SecretEnvSource(name="airflow-aws"))],
     resources=k8s.V1ResourceRequirements(
         requests={"cpu": "2000m", "memory": "3Gi"},
         limits={"cpu": "4000m", "memory": "6Gi"},
     ),
 )
 
-def make_executor():
+# ------------------------------------------------
+# 패키징 전용 (저사양)
+# ------------------------------------------------
+package_container = k8s.V1Container(
+    name="base",
+    image="leeyonghun/airflow-ffmpeg:v4",
+    env_from=[k8s.V1EnvFromSource(secret_ref=k8s.V1SecretEnvSource(name="airflow-aws"))],
+    resources=k8s.V1ResourceRequirements(
+        requests={"cpu": "500m", "memory": "1Gi"},
+        limits={"cpu": "1000m", "memory": "2Gi"},
+    ),
+)
+
+def exec_config(container):
     return {
         "pod_override": k8s.V1Pod(
             spec=k8s.V1PodSpec(
-                containers=[base_container],
-                restart_policy="Never"
+                containers=[container],
+                restart_policy="Never",
             )
         )
     }
 
-# ---------------------
-# 1) 원본 다운로드
-# ---------------------
-@task(executor_config=make_executor())
-def download_video(org_id: int, video_uuid: str):
-    s3 = boto3.client("s3")
 
+# ------------------------------------------------
+# 1) 다운로드
+# ------------------------------------------------
+@task(executor_config=exec_config(package_container))
+def download_video(org_id: int, video_uuid: str):
+
+    s3 = boto3.client("s3")
     s3_key = f"org-{org_id}/{video_uuid}/original.mp4"
     local_input = f"{OUTPUT_DIR}/{video_uuid}_original.mp4"
 
@@ -53,10 +63,11 @@ def download_video(org_id: int, video_uuid: str):
 
     return local_input
 
-# ---------------------
-# 2) 해상도별 트랜스코딩
-# ---------------------
-@task(executor_config=make_executor())
+
+# ------------------------------------------------
+# 2) 트랜스코딩 (병렬)
+# ------------------------------------------------
+@task(executor_config=exec_config(transcode_container))
 def transcode_video(local_input: str, res: str, org_id: int, video_uuid: str):
 
     output_local = f"{OUTPUT_DIR}/{video_uuid}_{res}p.mp4"
@@ -70,28 +81,32 @@ def transcode_video(local_input: str, res: str, org_id: int, video_uuid: str):
     print(f"🎬 Transcoding {res}p → {output_local}")
     subprocess.run(cmd, shell=True, check=True)
 
+    # S3 업로드 (트랜스코딩 mp4 → original bucket)
     s3 = boto3.client("s3")
     key = f"org-{org_id}/{video_uuid}/{res}p.mp4"
 
-    print(f"⬆️ Uploading {output_local} → s3://{BUCKET_ORIGINAL}/{key}")
+    print(f"⬆️ Upload {output_local} → s3://{BUCKET_ORIGINAL}/{key}")
     s3.upload_file(output_local, BUCKET_ORIGINAL, key)
 
     return output_local
 
-# ---------------------
-# 3) 패키징 (HLS)
-# ---------------------
-@task(executor_config=make_executor())
-def packaging(org_id: int, video_uuid: str, trans_outputs: list):
+
+# ------------------------------------------------
+# 3) 패키징 + 업로드 (한 번에 처리)
+# ------------------------------------------------
+@task(executor_config=exec_config(package_container))
+def packaging_and_upload(org_id: int, video_uuid: str, trans_outputs: list):
+
+    s3 = boto3.client("s3")
 
     out_dir = f"{OUTPUT_DIR}/hls_{video_uuid}"
     os.makedirs(out_dir, exist_ok=True)
 
     rendition_infos = []
 
+    # 개별 해상도 HLS
     for mp4_path in trans_outputs:
         res = mp4_path.split("_")[-1].replace("p.mp4", "")
-
         res_dir = f"{out_dir}/{res}p"
         os.makedirs(res_dir, exist_ok=True)
 
@@ -107,6 +122,7 @@ def packaging(org_id: int, video_uuid: str, trans_outputs: list):
 
         rendition_infos.append((res, f"{res}p/index.m3u8"))
 
+    # MASTER 생성
     master_path = f"{out_dir}/master.m3u8"
     with open(master_path, "w") as m:
         m.write("#EXTM3U\n")
@@ -117,29 +133,23 @@ def packaging(org_id: int, video_uuid: str, trans_outputs: list):
                 f"{playlist}\n"
             )
 
-    return out_dir
+    # ---- 전체 업로드 ----
+    print("⬆️ Uploading HLS package to S3...")
 
-# ---------------------
-# 4) 패키징 결과 전체 업로드
-# ---------------------
-@task(executor_config=make_executor())
-def upload_to_s3(org_id: int, video_uuid: str, root_dir: str):
-
-    s3 = boto3.client("s3")
-
-    for root, dirs, files in os.walk(root_dir):
+    for root, dirs, files in os.walk(out_dir):
         for file in files:
             local_path = os.path.join(root, file)
-            key = f"org-{org_id}/{video_uuid}/{local_path.replace(root_dir, '').lstrip('/')}"
-            print(f"⬆️ Upload {local_path} → s3://{BUCKET_OUTPUT}/{key}")
+            key = f"org-{org_id}/{video_uuid}/{local_path.replace(out_dir, '').lstrip('/')}"
+            print(f"S3 → {key}")
             s3.upload_file(local_path, BUCKET_OUTPUT, key)
 
+    print("🎉 All packaging + upload finished")
     return True
 
 
-# ---------------------
-# DAG 정의
-# ---------------------
+# ------------------------------------------------
+# DAG
+# ------------------------------------------------
 with DAG(
     dag_id="video_transcode_hls_pipeline",
     start_date=datetime(2025, 1, 1),
@@ -152,13 +162,11 @@ with DAG(
 
     original = download_video(org_id, video_uuid)
 
-    trans_tasks = []
-    for r in RESOLUTIONS:
-        t = transcode_video(original, r, org_id, video_uuid)
-        trans_tasks.append(t)
+    trans_tasks = [
+        transcode_video(original, r, org_id, video_uuid)
+        for r in RESOLUTIONS
+    ]
 
-    pkg = packaging(org_id, video_uuid, trans_tasks)
+    final = packaging_and_upload(org_id, video_uuid, trans_tasks)
 
-    upload = upload_to_s3(org_id, video_uuid, pkg)
-
-    original >> trans_tasks >> pkg >> upload
+    original >> trans_tasks >> final
