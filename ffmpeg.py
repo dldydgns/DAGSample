@@ -38,17 +38,17 @@ def make_executor():
 # 1) 원본 다운로드
 # ---------------------
 @task(executor_config=make_executor())
-def download_video(org_id: int, video_uuid: str, ext: str):
+def download_video(org_id: int, video_uuid: str):
     s3 = boto3.client("s3")
 
-    s3_key = f"org-{org_id}/{video_uuid}/original.{ext}"
-    local_input = f"{OUTPUT_DIR}/{video_uuid}_original.{ext}"
+    # 확장자 고정: .mp4
+    s3_key = f"org-{org_id}/{video_uuid}/original.mp4"
+    local_input = f"{OUTPUT_DIR}/{video_uuid}_original.mp4"
 
     print(f"⬇️ Download → s3://{BUCKET_ORIGINAL}/{s3_key}")
     s3.download_file(BUCKET_ORIGINAL, s3_key, local_input)
 
     return local_input
-
 
 # ---------------------
 # 2) 해상도별 트랜스코딩
@@ -67,7 +67,6 @@ def transcode_video(local_input: str, res: str, org_id: int, video_uuid: str):
     print(f"🎬 Transcoding {res}p → {output_local}")
     subprocess.run(cmd, shell=True, check=True)
 
-    # S3 업로드 (트랜스코딩 mp4는 original 버킷)
     s3 = boto3.client("s3")
     key = f"org-{org_id}/{video_uuid}/{res}p.mp4"
 
@@ -75,7 +74,6 @@ def transcode_video(local_input: str, res: str, org_id: int, video_uuid: str):
     s3.upload_file(output_local, BUCKET_ORIGINAL, key)
 
     return output_local
-
 
 # ---------------------
 # 3) 패키징 (HLS)
@@ -106,7 +104,6 @@ def packaging(org_id: int, video_uuid: str, trans_outputs: list):
 
         rendition_infos.append((res, f"{res}p/index.m3u8"))
 
-    # master.m3u8 생성
     master_path = f"{out_dir}/master.m3u8"
     with open(master_path, "w") as m:
         m.write("#EXTM3U\n")
@@ -118,7 +115,6 @@ def packaging(org_id: int, video_uuid: str, trans_outputs: list):
             )
 
     return out_dir
-
 
 # ---------------------
 # 4) 패키징 결과 전체 업로드
@@ -150,9 +146,8 @@ with DAG(
 
     org_id = "{{ dag_run.conf['org_id'] }}"
     video_uuid = "{{ dag_run.conf['video_uuid'] }}"
-    ext = "{{ dag_run.conf['ext'] }}"
 
-    original = download_video(org_id, video_uuid, ext)
+    original = download_video(org_id, video_uuid)
 
     trans_tasks = []
     for r in RESOLUTIONS:
