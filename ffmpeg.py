@@ -22,6 +22,10 @@ base_container = k8s.V1Container(
             secret_ref=k8s.V1SecretEnvSource(name="airflow-aws")
         )
     ],
+    resources=k8s.V1ResourceRequirements(
+        requests={"cpu": "2000m", "memory": "3Gi"},
+        limits={"cpu": "4000m", "memory": "6Gi"},
+    ),
 )
 
 def make_executor():
@@ -41,7 +45,6 @@ def make_executor():
 def download_video(org_id: int, video_uuid: str):
     s3 = boto3.client("s3")
 
-    # 확장자 고정: .mp4
     s3_key = f"org-{org_id}/{video_uuid}/original.mp4"
     local_input = f"{OUTPUT_DIR}/{video_uuid}_original.mp4"
 
@@ -94,7 +97,7 @@ def packaging(org_id: int, video_uuid: str, trans_outputs: list):
 
         cmd = (
             f"ffmpeg -i {mp4_path} -c copy "
-            f"-map 0 -f hls -hls_time 4 -hls_playlist_type vod "
+            f"-map 0 -f hls -hls_time 10 -hls_playlist_type vod "
             f"-hls_segment_filename '{res_dir}/segment%03d.ts' "
             f"{res_dir}/index.m3u8"
         )
