@@ -4,16 +4,21 @@ from datetime import datetime
 import boto3
 import os
 import subprocess
+import shutil
 from kubernetes.client import models as k8s
 
+# -------------------------------
+# 기본 설정
+# -------------------------------
 BUCKET_ORIGINAL = "privideo-original"
 BUCKET_OUTPUT = "privideo-output"
-OUTPUT_DIR = "/tmp"
+OUTPUT_DIR = "/workspace"
 RESOLUTIONS = ["360", "540", "720"]
 
-# ------------------------------------------------
-# 리소스별 컨테이너 생성 함수
-# ------------------------------------------------
+
+# -------------------------------
+# 리소스 컨테이너 생성
+# -------------------------------
 def make_container(cpu_req, cpu_limit, mem_req, mem_limit):
     return k8s.V1Container(
         name="base",
@@ -28,38 +33,60 @@ def make_container(cpu_req, cpu_limit, mem_req, mem_limit):
     )
 
 
-# ------------------------------------------------
 # 해상도별 리소스 매핑
-# ------------------------------------------------
 def get_transcode_container(res):
     if res == "360":
-        return make_container("1000m", "2000m", "2Gi", "3Gi")
+        return make_container("2000m", "3000m", "1Gi", "2Gi")
     elif res == "540":
-        return make_container("2000m", "3000m", "3Gi", "4Gi")
+        return make_container("3000m", "4000m", "2Gi", "3Gi")
     elif res == "720":
-        return make_container("3000m", "4000m", "4Gi", "6Gi")
+        return make_container("4000m", "5000m", "3Gi", "4Gi")
     else:
         raise ValueError("Unsupported resolution")
 
 
-# 패키징(저사양)
+# 패키징 컨테이너 (저사양)
 package_container = make_container("500m", "1000m", "1Gi", "2Gi")
 
 
+# -------------------------------
+# PVC 마운트 Pod Override
+# -------------------------------
 def exec_config(container):
     return {
         "pod_override": k8s.V1Pod(
             spec=k8s.V1PodSpec(
-                containers=[container],
+                containers=[
+                    k8s.V1Container(
+                        name=container.name,
+                        image=container.image,
+                        env_from=container.env_from,
+                        resources=container.resources,
+                        volume_mounts=[
+                            k8s.V1VolumeMount(
+                                name="worker-temp",
+                                mount_path="/workspace"
+                            )
+                        ],
+                    )
+                ],
+                volumes=[
+                    k8s.V1Volume(
+                        name="worker-temp",
+                        persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(
+                            claim_name="pvc-hdd-airflow-worker-temp"
+                        )
+                    )
+                ],
                 restart_policy="Never",
             )
         )
     }
 
 
-# ------------------------------------------------
+# -------------------------------
 # 1) 다운로드
-# ------------------------------------------------
+# -------------------------------
 @task(executor_config=exec_config(package_container))
 def download_video(org_id: int, video_uuid: str):
 
@@ -73,9 +100,9 @@ def download_video(org_id: int, video_uuid: str):
     return local_input
 
 
-# ------------------------------------------------
+# -------------------------------
 # 2) 트랜스코딩 (해상도별 병렬)
-# ------------------------------------------------
+# -------------------------------
 def build_transcode_task(resolution):
 
     container = get_transcode_container(resolution)
@@ -108,9 +135,9 @@ def build_transcode_task(resolution):
     return _transcode
 
 
-# ------------------------------------------------
+# -------------------------------
 # 3) 패키징 + 업로드
-# ------------------------------------------------
+# -------------------------------
 @task(executor_config=exec_config(package_container))
 def packaging_and_upload(org_id: int, video_uuid: str, trans_outputs: list):
 
@@ -138,7 +165,7 @@ def packaging_and_upload(org_id: int, video_uuid: str, trans_outputs: list):
 
         rendition_infos.append((res, f"{res}p/index.m3u8"))
 
-    # MASTER M3U8
+    # MASTER M3U8 생성
     master_path = f"{out_dir}/master.m3u8"
     with open(master_path, "w") as m:
         m.write("#EXTM3U\n")
@@ -149,13 +176,13 @@ def packaging_and_upload(org_id: int, video_uuid: str, trans_outputs: list):
                 f"{playlist}\n"
             )
 
-    # 전체 업로드
+    # 전체 업로드 (privideo-output)
     print("⬆️ Uploading all HLS outputs to S3...")
 
     for root, dirs, files in os.walk(out_dir):
         for file in files:
             local_path = os.path.join(root, file)
-            key = f"org-{org_id}/{video_uuid}/{local_path.replace(out_dir, '').lstrip('/')}"
+            key = f"hls/org-{org_id}/{video_uuid}/{local_path.replace(out_dir, '').lstrip('/')}"
             print(f"S3 → {key}")
             s3.upload_file(local_path, BUCKET_OUTPUT, key)
 
@@ -163,9 +190,38 @@ def packaging_and_upload(org_id: int, video_uuid: str, trans_outputs: list):
     return True
 
 
-# ------------------------------------------------
+# -------------------------------
+# 4) PVC 정리(삭제)
+# -------------------------------
+@task(executor_config=exec_config(package_container))
+def cleanup_local_files(video_uuid: str):
+
+    base = OUTPUT_DIR
+    print(f"🧹 Cleaning up PVC… {base}")
+
+    # 원본 + MP4
+    for f in os.listdir(base):
+        if f.startswith(video_uuid):
+            path = os.path.join(base, f)
+            print(f"🗑 Removing {path}")
+            if os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                os.remove(path)
+
+    # HLS 디렉터리
+    hls_dir = os.path.join(base, f"hls_{video_uuid}")
+    if os.path.exists(hls_dir):
+        print(f"🗑 Removing HLS: {hls_dir}")
+        shutil.rmtree(hls_dir, ignore_errors=True)
+
+    print("🧼 PVC cleanup complete.")
+    return True
+
+
+# -------------------------------
 # DAG 정의
-# ------------------------------------------------
+# -------------------------------
 with DAG(
     dag_id="video_transcode_hls_pipeline",
     start_date=datetime(2025, 1, 1),
@@ -186,4 +242,6 @@ with DAG(
 
     final = packaging_and_upload(org_id, video_uuid, trans_tasks)
 
-    original >> trans_tasks >> final
+    clean = cleanup_local_files(video_uuid)
+
+    original >> trans_tasks >> final >> clean
