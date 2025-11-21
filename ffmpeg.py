@@ -56,6 +56,17 @@ def exec_config(container):
     return {
         "pod_override": k8s.V1Pod(
             spec=k8s.V1PodSpec(
+                tolerations=[
+                    k8s.V1Toleration(
+                        key="role",
+                        operator="Equal",
+                        value="airflow-worker",
+                        effect="NoSchedule"
+                    )
+                ],
+                node_selector={
+                    "role": "airflow-worker"
+                },
                 containers=[
                     k8s.V1Container(
                         name=container.name,
