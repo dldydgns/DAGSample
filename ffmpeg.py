@@ -36,11 +36,11 @@ def make_container(cpu_req, cpu_limit, mem_req, mem_limit):
 # 해상도별 리소스 매핑
 def get_transcode_container(res):
     if res == "360":
-        return make_container("2000m", "3000m", "1Gi", "2Gi")
+        return make_container("1000m", "1000m", "1Gi", "2Gi")
     elif res == "540":
-        return make_container("3000m", "4000m", "2Gi", "3Gi")
+        return make_container("1000m", "2000m", "1Gi", "3Gi")
     elif res == "720":
-        return make_container("4000m", "5000m", "3Gi", "4Gi")
+        return make_container("1000m", "3000m", "1Gi", "4Gi")
     else:
         raise ValueError("Unsupported resolution")
 
