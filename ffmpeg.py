@@ -187,19 +187,25 @@ def packaging_and_upload(org_id: int, video_uuid: str, trans_outputs: list):
                 f"{playlist}\n"
             )
 
-    # 전체 업로드 (privideo-output)
-    print("⬆️ Uploading all HLS outputs to S3...")
+    print("⬆️ Uploading HLS outputs (segments + index files) to S3...")
 
+    # --- master.m3u8 제외한 파일만 먼저 업로드 ---
     for root, dirs, files in os.walk(out_dir):
         for file in files:
+            if file == "master.m3u8":
+                continue  # <<<<<< master는 나중에!
             local_path = os.path.join(root, file)
             key = f"hls/org-{org_id}/{video_uuid}/{local_path.replace(out_dir, '').lstrip('/')}"
             print(f"S3 → {key}")
             s3.upload_file(local_path, BUCKET_OUTPUT, key)
 
+    # --- MASTER 파일을 마지막에 업로드 ---
+    final_master_key = f"hls/org-{org_id}/{video_uuid}/master.m3u8"
+    print(f"⬆️ Final upload → {final_master_key}")
+    s3.upload_file(master_path, BUCKET_OUTPUT, final_master_key)
+
     print("🎉 Packaging + Upload completed.")
     return True
-
 
 # -------------------------------
 # 4) PVC 정리(삭제)
