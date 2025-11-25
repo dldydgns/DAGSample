@@ -105,18 +105,18 @@ def dag_fail_callback(context):
     video_uuid = context['dag_run'].conf.get("video_uuid")
     error = str(context.get("exception"))
 
-		url = f"https://privideo-backend-service.web.svc.cluster.local/{org_id}/video/airflow/status"
-		
-		requests.post(
-		    url,
-		    json={
-		        "dag_id": dag_id,
-		        "video_uuid": video_uuid,
-		        "status": "FAILED",
-		        "message": "[DAG Failed] " + error
-		    },
-		    timeout=3
-		)
+	url = f"https://privideo-backend-service.web.svc.cluster.local/{org_id}/video/airflow/status"
+	
+	requests.post(
+		url,
+		json={
+			"dag_id": dag_id,
+			"video_uuid": video_uuid,
+			"status": "FAILED",
+			"message": "[DAG Failed] " + error
+		},
+		timeout=3
+	)
 
 
 def dag_success_callback(context):
@@ -124,18 +124,18 @@ def dag_success_callback(context):
     org_id = context['dag_run'].conf.get("org_id")
     video_uuid = context['dag_run'].conf.get("video_uuid")
 
-		url = f"https://privideo-backend-service.web.svc.cluster.local/{org_id}/video/airflow/status"
-		
-		requests.post(
-		    url,
-		    json={
-		        "dag_id": dag_id,
-		        "video_uuid": video_uuid,
-		        "status": "SUCCESS",
-		        "message": "[DAG Success] Success upload"
-		    },
-		    timeout=3
-		)
+	url = f"https://privideo-backend-service.web.svc.cluster.local/{org_id}/video/airflow/status"
+	
+	requests.post(
+		url,
+		json={
+			"dag_id": dag_id,
+			"video_uuid": video_uuid,
+			"status": "SUCCESS",
+			"message": "[DAG Success] Success upload"
+		},
+		timeout=3
+	)
 
 def task_fail_callback(context):
     dag_id = context['dag'].dag_id
@@ -143,18 +143,18 @@ def task_fail_callback(context):
     org_id = context['dag_run'].conf.get("org_id")
     video_uuid = context['dag_run'].conf.get("video_uuid")
 
-		url = f"https://privideo-backend-service.web.svc.cluster.local/{org_id}/video/airflow/status"
-		
-		requests.post(
-		    url,
-		    json={
-		        "dag_id": dag_id,
-		        "video_uuid": video_uuid,
-		        "status": "FAILED",
-		        "message": "[Task Failed] Failed on " + task_id
-		    },
-		    timeout=3
-		)
+	url = f"https://privideo-backend-service.web.svc.cluster.local/{org_id}/video/airflow/status"
+	
+	requests.post(
+		url,
+		json={
+			"dag_id": dag_id,
+			"video_uuid": video_uuid,
+			"status": "FAILED",
+			"message": "[Task Failed] Failed on " + task_id
+		},
+		timeout=3
+	)
     
 # -------------------------------
 # 1) 다운로드
