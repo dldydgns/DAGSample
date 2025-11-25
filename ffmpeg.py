@@ -101,7 +101,6 @@ def exec_config(container):
 
 def dag_fail_callback(context):
     dag_id = context['dag'].dag_id
-    task_id = context['task_instance'].task_id
     org_id = context['dag_run'].conf.get("org_id")
     video_uuid = context['dag_run'].conf.get("video_uuid")
     error = str(context.get("exception"))
@@ -113,7 +112,7 @@ def dag_fail_callback(context):
             "org_id": org_id,
             "video_uuid": video_uuid,
             "status": "FAILED",
-            "message": "Failed task : " + task_id
+            "message": "[DAG Failed] " + error
         },
         timeout=3
     )
@@ -131,11 +130,29 @@ def dag_success_callback(context):
             "org_id": org_id,
             "video_uuid": video_uuid,
             "status": "SUCCESS",
-            "message": "Success upload"
+            "message": "[DAG Success] Success upload"
         },
         timeout=3
     )
 
+def task_fail_callback(context):
+    dag_id = context['dag'].dag_id
+    task_id = context['task_instance'].task_id
+    org_id = context['dag_run'].conf.get("org_id")
+    video_uuid = context['dag_run'].conf.get("video_uuid")
+
+    requests.post(
+        "https://privideo-backend-service.web.svc.cluster.local/airflow/status",
+        json={
+            "dag_id": dag_id,
+            "org_id": org_id,
+            "video_uuid": video_uuid,
+            "status": "FAILED",
+            "message": "[Task Failed] Failed on " + task_id
+        },
+        timeout=3
+    )
+    
 # -------------------------------
 # 1) 다운로드
 # -------------------------------
